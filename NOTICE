@@ -1,0 +1,39 @@
+A Better SIP Call Generator
+Copyright 2026 Oswaldo Aguirre
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Built on SIPp
+-------------
+This project is a web front end and orchestration layer for SIPp
+(https://github.com/SIPp/sipp), the free open-source SIP test tool and traffic
+generator. SIPp does all of the actual SIP call generation here, and the credit
+for that belongs to the SIPp authors and community. SIPp is licensed under the
+GNU General Public License, version 3 or later, Copyright (C) 2003-2026 The
+SIPp Authors. SIPp is NOT included in this repository and is not distributed
+with it. You install it separately, and this project runs it as an external
+program (the two are separate programs that communicate through command-line
+arguments, files and standard process control).
+
+This project is independent. It is not affiliated with, endorsed by, or
+sponsored by the SIPp project.
+
+Bundled third-party components
+------------------------------
+static/vendor/jspdf.umd.min.js              jsPDF 2.5.1, MIT License (static/vendor/jspdf.LICENSE)
+static/vendor/jspdf.plugin.autotable.min.js jsPDF-AutoTable 3.5.28, MIT License (static/vendor/autotable.LICENSE)
+
+Python dependencies (installed from PyPI, not bundled)
+------------------------------------------------------
+FastAPI (MIT), Starlette (BSD-3-Clause), Uvicorn (BSD-3-Clause), Pydantic (MIT),
+python-multipart (Apache-2.0), cryptography (Apache-2.0 OR BSD-3-Clause),
+PyJWT (MIT), HTTPX (BSD-3-Clause). Each is under its own license.
+
+External programs the application runs (installed separately)
+--------------------------------------------------------------
+SIPp (GPL-3.0-or-later), tcpdump and libpcap (BSD-3-Clause), setpriv from
+util-linux (GPL-2.0-or-later), FFmpeg (LGPL-2.1-or-later / GPL), and optionally
+libbcg729 from Belledonne Communications (GPL-3.0-or-later, for G.729) and editcap
+from Wireshark (GPL-2.0-or-later). None are included in this repository.
+
+See THIRD_PARTY_LICENSES.md for the full list and how each piece is used.

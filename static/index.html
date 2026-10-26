@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A Better SIP Call Generator</title>
+<link rel="stylesheet" href="/style.css">
+<!-- PDF export (test run report) — client-side, no new
+     server dependency. Loaded once here; exportReportPDF()
+     use window.jspdf at click time. -->
+<script src="/vendor/jspdf.umd.min.js"></script>
+<script src="/vendor/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+<div class="app">
+
+<!-- Top Bar -->
+<div class="topbar">
+  <div class="dot" id="dot"></div>
+  <h1>A Better SIP Call Generator</h1>
+  <span style="font-size:11px;color:#888" id="server-status">connecting...</span>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+    <label style="font-size:11px;color:#888">API Key</label>
+    <input type="password" id="api-key" placeholder="API Key" style="width:200px;padding:4px 8px;border-radius:6px;border:1px solid #444;background:#333;color:#fff;font-size:12px;outline:none"/>
+    <button onclick="pingServer()" style="padding:4px 10px;font-size:12px;background:#333;color:#aaa;border:1px solid #555;border-radius:6px;cursor:pointer">Ping</button>
+    <button onclick="showTab('config')" style="padding:4px 10px;font-size:12px;background:#333;color:#aaa;border:1px solid #555;border-radius:6px;cursor:pointer">⚙ Config</button>
+    <button onclick="showTab('history')" style="padding:4px 10px;font-size:12px;background:#333;color:#aaa;border:1px solid #555;border-radius:6px;cursor:pointer">📋 History</button>
+    <span id="logged-in-as" style="font-size:11px;color:#666;margin-left:6px"></span>
+    <button onclick="doLogout()" style="padding:4px 10px;font-size:12px;background:#3a2222;color:#f0a0a0;border:1px solid #663333;border-radius:6px;cursor:pointer">Log out</button>
+  </div>
+</div>
+
+<div class="main">
+
+<!-- Side Panel -->
+<div class="side-panel">
+  <div class="side-header">
+    <span>Workspaces</span>
+    <span style="font-size:11px;color:#aaa" id="ws-count">0/8</span>
+  </div>
+  <div class="side-workspaces" id="side-workspaces">
+    <!-- workspace cards rendered here -->
+  </div>
+  <div class="side-footer">
+    <button class="add-ws-btn" onclick="addWorkspace()" id="add-ws-btn">+ Add workspace</button>
+  </div>
+</div>
+
+<!-- Content Area -->
+<div class="content" id="content-area">
+
+  <!-- No workspace selected -->
+  <div id="no-ws-panel" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#888">
+    <div style="font-size:48px;margin-bottom:16px">🔭</div>
+    <div style="font-size:18px;font-weight:500;margin-bottom:8px">A Better SIP Call Generator</div>
+    <div style="font-size:13px;margin-bottom:24px">Add a workspace to get started</div>
+    <button class="btn-start" onclick="addWorkspace()">+ Add workspace</button>
+  </div>
+
+  <!-- Workspace content -->
+  <div id="ws-content" style="display:none;height:100%;display:none;flex-direction:column">
+
+    <!-- Content Header -->
+    <div class="content-header">
+      <input class="ws-name-input" id="ws-name-input" placeholder="Workspace name..." onchange="updateWorkspaceLabel()" onblur="updateWorkspaceLabel()"/>
+      <select class="role-select" id="ws-role-select" onchange="updateWorkspaceRole()">
+        <option value="tx">▶ Originating NIC (TX)</option>
+        <option value="rx">● Terminating NIC (RX)</option>
+      </select>
+      <select class="ip-select" id="ws-ip-select" onchange="updateWorkspaceIP()">
+        <option>loading...</option>
+      </select>
+      <span style="font-size:12px;color:#888" id="ws-port-label" style="display:none">Listen Port:</span>
+      <input class="port-input" id="ws-port-input" value="5060" onchange="updateWorkspacePort()" style="display:none"/>
+      <button onclick="saveWorkspaceTemplateAs()" style="padding:5px 10px;font-size:12px;color:#185FA5;border:1px solid #b3d1f0;border-radius:6px;background:transparent;cursor:pointer;margin-left:8px">💾 Save As...</button>
+      <button onclick="loadWorkspaceTemplate()" style="padding:5px 10px;font-size:12px;color:#555;border:1px solid #ddd;border-radius:6px;background:transparent;cursor:pointer">📂 Load Template</button>
+      <button onclick="deleteWorkspace(activeWsId)" style="padding:5px 10px;font-size:12px;color:#dc2626;border:1px solid #fca5a5;border-radius:6px;background:transparent;cursor:pointer">✕ Remove</button>
+    </div>
+
+    <!-- Content Tabs -->
+    <div class="content-tabs" id="content-tabs">
+      <div class="content-tab active" onclick="showContentTab('scripts')">Scripts</div>
+      <div class="content-tab" onclick="showContentTab('intervals')">Intervals</div>
+      <div class="content-tab" onclick="showContentTab('audio')">Audio</div>
+      <div class="content-tab" onclick="showContentTab('log')">Live log</div>
+      <div class="content-tab" onclick="showContentTab('ladder')">Ladder</div>
+      <div class="content-tab" onclick="showContentTab('sipstats')">SIP Stats</div>
+      <div class="content-tab" onclick="showContentTab('quality')">Call Quality</div>
+      <div class="content-tab" onclick="showContentTab('export')">Export</div>
+      <div class="content-tab" onclick="showContentTab('scenarios')">Scenarios</div>
+    </div>
+
+    <!-- Content Body -->
+    <div class="content-body">
+
+      <!-- Scripts Tab -->
+      <div class="content-panel active" id="panel-scripts">
+        <div class="controls-bar">
+          <div class="pct-bar-wrap"><div class="pct-bar" id="pct-bar" style="width:0%"></div></div>
+          <span style="font-size:11px;color:#888" id="pct-label">0%</span>
+          <button onclick="addScript()" style="padding:6px 12px;font-size:12px;border:1px solid #e5e5e5;border-radius:6px;background:#fff;cursor:pointer" id="add-script-btn">+ Script</button>
+          <span style="font-size:11px;color:#888" id="script-count-label">0/5</span>
+          <span style="font-size:11px;color:#888;margin-left:8px">→ Set CPS in Intervals tab</span>
+        </div>
+        <div id="script-slots"></div>
+      </div>
+
+      <!-- Intervals Tab -->
+      <div class="content-panel" id="panel-intervals">
+        <!-- Start/Stop controls -->
+        <div class="controls-bar" style="margin-bottom:14px">
+          <button class="btn-start" id="ws-start-btn" onclick="startWorkspace()">▶ Start</button>
+          <button class="btn-stop" id="ws-stop-btn" onclick="stopWorkspace()" disabled>■ Stop</button>
+          <span class="badge idle" id="ws-badge">Idle</span>
+          <div style="display:flex;align-items:center;gap:6px;margin-left:8px">
+            <input type="checkbox" id="ws-continuous" style="width:15px;height:15px"/>
+            <label for="ws-continuous" style="font-size:12px;color:#555;cursor:pointer">Continuous</label>
+          </div>
+          <span style="font-size:12px;color:#f59e0b" id="interval-progress-label"></span>
+        </div>
+
+        <!-- Workspace totals -->
+        <div class="stats-row" style="margin-bottom:14px">
+          <div class="stat-card"><div class="label" id="ws-stat-label-1">Sent</div><div class="value" id="ws-sent">—</div></div>
+          <div class="stat-card"><div class="label" id="ws-stat-label-2">Completed</div><div class="value ok" id="ws-completed">—</div></div>
+          <div class="stat-card"><div class="label">Failed</div><div class="value fail" id="ws-failed">—</div></div>
+          <div class="stat-card"><div class="label">In progress</div><div class="value" id="ws-active">—</div></div>
+          <div class="stat-card"><div class="label">Retransmits</div><div class="value" id="ws-retrans">—</div></div>
+          <div class="stat-card"><div class="label">MOS</div><div class="value mos" id="ws-mos">—</div></div>
+        </div>
+
+        <!-- Bar chart -->
+        <div id="interval-chart" style="margin-bottom:14px;background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:12px;min-height:120px">
+          <div style="font-size:11px;color:#888;margin-bottom:8px;font-weight:500;text-transform:uppercase;letter-spacing:.04em">CPS Profile</div>
+          <canvas id="interval-canvas" height="100" style="width:100%"></canvas>
+          <div style="font-size:11px;color:#aaa;text-align:center;margin-top:4px" id="interval-chart-empty">Add intervals to see the CPS profile</div>
+        </div>
+
+        <!-- Add interval button -->
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+          <button onclick="addInterval()" style="padding:6px 14px;font-size:12px;border:1px solid #e5e5e5;border-radius:6px;background:#fff;cursor:pointer">+ Add interval</button>
+          <span style="font-size:12px;color:#888" id="interval-timeline"></span>
+        </div>
+
+        <!-- Interval cards -->
+        <div id="interval-slots"></div>
+      </div>
+
+      <!-- Audio Tab -->
+      <div class="content-panel" id="panel-audio">
+        <div style="max-width:560px">
+          <div class="field" style="margin-bottom:12px">
+            <label>Script</label>
+            <select id="audio-script-select" onchange="loadAudioSettings()" style="width:100%;border:1px solid #e5e5e5;border-radius:8px;padding:7px 10px;font-size:13px;background:#fafafa;outline:none"></select>
+          </div>
+          <div class="field" style="margin-bottom:12px">
+            <label>Audio file</label>
+            <select id="audio-file-select" onchange="applyAudioSetting()" style="width:100%;border:1px solid #e5e5e5;border-radius:8px;padding:7px 10px;font-size:13px;background:#fafafa;outline:none"></select>
+          </div>
+          <div class="field-grid">
+            <div class="field">
+              <label>Duration mode</label>
+              <select id="audio-mode-select" onchange="applyAudioSetting();toggleAudioModeLabel()" style="width:100%;border:1px solid #e5e5e5;border-radius:8px;padding:7px 10px;font-size:13px;background:#fafafa;outline:none">
+                <option value="plays">Play count</option>
+                <option value="duration">Duration (s)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label id="audio-val-label">Number of plays</label>
+              <input type="number" id="audio-val-input" value="2" min="1" onchange="applyAudioSetting()" style="width:100%;border:1px solid #e5e5e5;border-radius:8px;padding:7px 10px;font-size:13px;background:#fafafa;outline:none"/>
+            </div>
+            <div class="field">
+              <label>Call duration</label>
+              <div style="padding:8px 10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:13px;color:#185FA5;font-weight:500" id="audio-duration-display">—</div>
+            </div>
+          </div>
+          <div class="field" style="margin-bottom:12px">
+            <label>Codec</label>
+            <select id="audio-codec" onchange="applyAudioSetting()" style="width:100%;border:1px solid #e5e5e5;border-radius:8px;padding:7px 10px;font-size:13px;background:#fafafa;outline:none">
+              <option value="PCMU">G.711 ulaw (PCMU) — 64kbps</option>
+              <option value="PCMA">G.711 alaw (PCMA) — 64kbps</option>
+              <option value="G729">G.729 — 8kbps</option>
+            </select>
+          </div>
+          <div class="field" style="margin-bottom:12px">
+            <label>DTMF (RFC 2833)</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="checkbox" id="dtmf-enable" onchange="applyAudioSetting()" style="width:16px;height:16px"/>
+              <input id="dtmf-digits" placeholder="e.g. 1 2 3 #" style="flex:1;border:1px solid #e5e5e5;border-radius:8px;padding:7px 10px;font-size:13px;outline:none" onchange="applyAudioSetting()"/>
+              <span style="font-size:12px;color:#888;white-space:nowrap">Gap (ms)</span>
+              <input type="number" id="dtmf-gap" value="100" style="width:70px;border:1px solid #e5e5e5;border-radius:8px;padding:7px 10px;font-size:13px;outline:none" onchange="applyAudioSetting()"/>
+            </div>
+          </div>
+          <div class="field" style="margin-bottom:12px">
+            <label>RTP + MOS scoring</label>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+              <input type="checkbox" id="audio-rtp" onchange="applyAudioSetting()" style="width:16px;height:16px"/>
+              <span style="font-size:12px;color:#888">Enable RTP and PESQ MOS scoring</span>
+            </div>
+          </div>
+
+          <div class="field" id="error-insertion-panel" style="display:none">
+            <label>Error Insertion (RTP impairment)</label>
+            <div style="border:1px solid #e5e5e5;border-radius:8px;padding:10px;margin-top:4px;background:#fafafa">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <div>
+                  <label style="font-size:11px;color:#888">Packet loss %</label>
+                  <input type="number" id="rtp-loss-pct" value="0" min="0" max="100" step="0.5"
+                    style="width:100%;border:1px solid #e5e5e5;border-radius:6px;padding:5px 8px;font-size:13px;outline:none" onchange="applyAudioSetting()"/>
+                </div>
+                <div>
+                  <label style="font-size:11px;color:#888">Jitter ±ms</label>
+                  <input type="number" id="rtp-jitter-ms" value="0" min="0"
+                    style="width:100%;border:1px solid #e5e5e5;border-radius:6px;padding:5px 8px;font-size:13px;outline:none" onchange="applyAudioSetting()"/>
+                </div>
+                <div>
+                  <label style="font-size:11px;color:#888">Burst loss (ms)</label>
+                  <input type="number" id="rtp-burst-ms" value="0" min="0"
+                    style="width:100%;border:1px solid #e5e5e5;border-radius:6px;padding:5px 8px;font-size:13px;outline:none" onchange="applyAudioSetting()"/>
+                </div>
+                <div>
+                  <label style="font-size:11px;color:#888">Burst every (s)</label>
+                  <input type="number" id="rtp-burst-every" value="0" min="0"
+                    style="width:100%;border:1px solid #e5e5e5;border-radius:6px;padding:5px 8px;font-size:13px;outline:none" onchange="applyAudioSetting()"/>
+                </div>
+              </div>
+              <div style="font-size:11px;color:#aaa;margin-top:8px">Leave all at 0 for clean audio. Loss % and burst loss are independent — both can be active at once.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Log Tab -->
+      <div class="content-panel" id="panel-log">
+        <div class="log" id="ws-log"><div class="info">[system] A Better SIP Call Generator ready</div></div>
+      </div>
+
+      <!-- Ladder Tab -->
+      <div class="content-panel" id="panel-ladder">
+        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+          <select id="ladder-script-select" onchange="loadLadder()" style="font-size:13px;padding:5px 10px;border:1px solid #e5e5e5;border-radius:6px;background:#fff"></select>
+          <button onclick="loadLadder()">↺ Load</button>
+          <select id="ladder-call-select" style="font-size:13px;padding:5px 10px;border:1px solid #e5e5e5;border-radius:6px;background:#fff;flex:1"></select>
+          <span style="font-size:12px;color:#888" id="ladder-call-count"></span>
+        </div>
+        <div class="ladder-container" id="ladder-container-svg"></div>
+        <div id="ladder-raw-panel" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px">
+            <span style="font-size:12px;font-weight:500;color:#185FA5" id="ladder-raw-title">Raw SIP</span>
+            <button onclick="document.getElementById('ladder-raw-panel').style.display='none'" style="padding:3px 8px;font-size:12px">Close</button>
+          </div>
+          <div class="raw-sip" id="ladder-raw-content"></div>
+        </div>
+      </div>
+
+      <!-- SIP Stats Tab -->
+      <div class="content-panel" id="panel-sipstats">
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+          <select id="sipstats-script-select" onchange="loadSipStats()"
+            style="font-size:13px;padding:5px 10px;border:1px solid #e5e5e5;border-radius:6px;background:#fff"></select>
+          <button onclick="loadSipStats()">↺ Refresh</button>
+          <span style="font-size:12px;color:#888" id="sipstats-summary"></span>
+        </div>
+        <div id="sipstats-content"></div>
+      </div>
+
+      <!-- Call Quality Tab -->
+      <div class="content-panel" id="panel-quality">
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+          <select id="quality-script-select" onchange="loadCallQuality()"
+            style="font-size:13px;padding:5px 10px;border:1px solid #e5e5e5;border-radius:6px;background:#fff"></select>
+          <button onclick="loadCallQuality()">↺ Load</button>
+          <span style="font-size:12px;color:#888" id="quality-summary"></span>
+        </div>
+
+        <div id="quality-table"></div>
+        <div id="ws-audio-player" style="display:none" class="audio-player">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="font-size:12px;font-weight:500;color:#185FA5" id="ws-player-label">RTP Audio</span>
+            <button onclick="document.getElementById('ws-audio-player').style.display='none'" style="padding:2px 8px;font-size:11px;margin-left:auto">✕</button>
+          </div>
+          <audio id="ws-audio-elem" controls style="width:100%"></audio>
+          <div style="font-size:11px;color:#888;margin-top:6px">Click anywhere on the timeline to jump to that moment</div>
+        </div>
+      </div>
+
+      <!-- Export Tab -->
+      <div class="content-panel" id="panel-export">
+        <div style="font-size:12px;color:#888;margin-bottom:14px">
+          Export the results of the last test run for the selected script.
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+          <select id="pcap-script-select" style="font-size:13px;padding:6px 10px;border:1px solid #e5e5e5;border-radius:6px;background:#fff"></select>
+          <button onclick="exportPCAP()" style="padding:8px 14px;border:1px solid #e5e5e5;border-radius:8px;background:#fff;cursor:pointer">⬇ Export PCAP</button>
+          <button onclick="exportReportPDF()" id="export-pdf-btn" style="padding:8px 14px;border:1px solid #e5e5e5;border-radius:8px;background:#fff;cursor:pointer">📄 Export PDF</button>
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;color:#888;font-weight:500;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:6px">
+            Notes <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional — printed at the top of the PDF)</span>
+          </label>
+          <textarea id="export-notes" placeholder="e.g. 'Carrier A trunk, 10 CPS ramp, after the firewall change.'"
+            style="width:100%;height:60px;border:1px solid #e5e5e5;border-radius:8px;padding:10px 12px;font-size:12px;font-family:inherit;color:#333;resize:vertical;outline:none;box-sizing:border-box;line-height:1.5"
+            maxlength="1000"></textarea>
+        </div>
+        <div style="font-size:12px;color:#888">
+          The PCAP contains the SIP and RTP captured during the run. The PDF summarizes call results, SIP message counts and media quality.
+        </div>
+      </div>
+
+      <!-- Scenarios Tab -->
+      <div class="content-panel" id="panel-scenarios">
+        <div style="font-size:12px;color:#888;margin-bottom:12px">
+          Browse and load saved scenarios here. To save a new one, use the
+          "💾 Save As..." button on the script itself (Scripts tab) — this
+          keeps saving unambiguous about which script's XML you're saving,
+          instead of picking one from a dropdown separately.
+        </div>
+        <div id="scenario-list"></div>
+      </div>
+
+    </div><!-- content-body -->
+  </div><!-- ws-content -->
+
+  <!-- Config Panel -->
+  <div id="config-panel" style="display:none;flex:1;overflow-y:auto;padding:16px">
+    <div style="max-width:800px">
+
+      <div style="display:flex;gap:4px;border-bottom:1px solid #e5e5e5;margin-bottom:16px;flex-wrap:wrap">
+        <div class="config-tab-btn active" data-tab="sut" onclick="showConfigTab('sut')">SUT Registry</div>
+        <div class="config-tab-btn" data-tab="account" onclick="showConfigTab('account')">Account</div>
+        <div class="config-tab-btn" data-tab="users" id="config-tab-btn-users" style="display:none" onclick="showConfigTab('users')">Users</div>
+        <div class="config-tab-btn" data-tab="workspaces" id="config-tab-btn-workspaces" style="display:none" onclick="showConfigTab('workspaces')">All Workspaces</div>
+        <div class="config-tab-btn" data-tab="llmprovider" onclick="showConfigTab('llmprovider')">AI Provider</div>
+        <div class="config-tab-btn" data-tab="stir" onclick="showConfigTab('stir')">STIR/SHAKEN</div>
+        <div class="config-tab-btn" data-tab="audio" onclick="showConfigTab('audio')">Audio Files</div>
+        <div class="config-tab-btn" data-tab="interfaces" onclick="showConfigTab('interfaces')">Interfaces</div>
+      </div>
+
+      <div class="config-tab-content active" id="config-tab-content-sut">
+      <div class="config-section">
+        <div class="config-section-title">SUT Registry</div>
+        <table class="sut-table">
+          <thead><tr><th>Name</th><th>IP</th><th>Port</th><th>Actions</th></tr></thead>
+          <tbody id="sut-table-body"></tbody>
+        </table>
+        <div class="add-row">
+          <input id="new-sut-name" placeholder="Name (e.g. Carrier-A)"/>
+          <input id="new-sut-ip" placeholder="IP address"/>
+          <input id="new-sut-port" placeholder="Port" value="5060" style="width:80px"/>
+          <button onclick="addSUT()" class="btn-start">Add SUT</button>
+        </div>
+      </div>
+      </div>
+
+      <div class="config-tab-content" id="config-tab-content-account">
+      <div class="config-section">
+        <div class="config-section-title">Account</div>
+        <div style="font-size:12px;color:#888;margin-bottom:10px">
+          Logged in as <strong id="account-username">—</strong>. Change your password below — this also applies if you're still using the auto-generated bootstrap password from first setup.
+        </div>
+        <div class="add-row">
+          <input type="password" id="acct-old-pw" placeholder="Current password"/>
+          <input type="password" id="acct-new-pw" placeholder="New password (min 8 chars)"/>
+          <input type="password" id="acct-new-pw-confirm" placeholder="Confirm new password"/>
+          <button onclick="changeAccountPassword()" class="btn-start">Change Password</button>
+        </div>
+        <div id="acct-pw-msg" style="font-size:12px;margin-top:8px"></div>
+      </div>
+      </div>
+
+      <div class="config-tab-content" id="config-tab-content-users">
+      <div class="config-section" id="user-mgmt-panel" style="display:none">
+        <div class="config-section-title">User Management</div>
+        <div style="font-size:12px;color:#888;margin-bottom:10px">
+          Create and manage accounts. Only admins can see this panel.
+          "Max Workspaces" is optional — leave blank to use the default
+          limit (shown as "default" in the table); set a number to give
+          this one account a different allotment.
+        </div>
+        <table class="sut-table">
+          <thead><tr><th>Username</th><th>Role</th><th>Max Workspaces</th><th>Actions</th></tr></thead>
+          <tbody id="user-mgmt-tbody"></tbody>
+        </table>
+        <div class="add-row">
+          <input id="new-user-username" placeholder="Username"/>
+          <input id="new-user-password" type="password" placeholder="Password (min 8 chars)"/>
+          <select id="new-user-role" style="border:1px solid #e5e5e5;border-radius:6px;padding:6px 8px;font-size:13px">
+            <option value="user">user — own workspaces only</option>
+            <option value="admin">admin — manages everyone's workspaces and users</option>
+          </select>
+          <input id="new-user-max-workspaces" type="number" min="0" placeholder="Max WS (blank=default)" style="width:150px"/>
+          <button onclick="createUser()" class="btn-start">Create User</button>
+        </div>
+        <div id="user-mgmt-msg" style="font-size:12px;margin-top:8px"></div>
+      </div>
+      </div>
+
+      <div class="config-tab-content" id="config-tab-content-workspaces">
+      <div class="config-section" id="admin-workspaces-panel" style="display:none">
+        <div class="config-section-title">All Workspaces (Admin View)</div>
+        <div style="font-size:12px;color:#888;margin-bottom:10px">
+          Every claimed workspace slot across all users — visible to admins only. Force-stop or release a slot someone forgot to free up.
+        </div>
+        <table class="sut-table">
+          <thead><tr><th>Slot</th><th>Owner</th><th>Label</th><th>IP</th><th>Running</th><th>Actions</th></tr></thead>
+          <tbody id="admin-workspaces-tbody"></tbody>
+        </table>
+        <button onclick="loadAdminWorkspaces()" style="margin-top:8px;padding:5px 10px;font-size:12px;background:#333;color:#aaa;border:1px solid #555;border-radius:6px;cursor:pointer">↻ Refresh</button>
+      </div>
+      </div>
+
+      <div class="config-tab-content" id="config-tab-content-llmprovider">
+      <div class="config-section">
+        <div class="config-section-title">AI Provider</div>
+        <div style="font-size:12px;color:#888;margin-bottom:10px">
+          Which AI service writes scenarios from your plain-English description. This is an install-wide
+          setting that only admins can change. Your API key is typed in the header box, used for that one
+          request, and never stored. A self-hosted model with no authentication needs no key.
+          Scenario prompts were tuned with Claude, so smaller local models may need a retry now and then.
+        </div>
+        <div id="llm-provider-info" style="font-size:13px;color:#444;margin-bottom:14px">Loading...</div>
+        <div id="llm-provider-edit" style="display:none">
+          <div class="add-row">
+            <select id="llm-provider-select" onchange="llmFormHints()" style="border:1px solid #e5e5e5;border-radius:6px;padding:6px 8px;font-size:13px">
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="openai_compatible">Self-hosted / OpenAI-compatible (Ollama, LM Studio, vLLM)</option>
+            </select>
+            <input id="llm-model-input" placeholder="Model (e.g. claude-sonnet-4-6, gpt-4o, llama3.1)"/>
+            <input id="llm-baseurl-input" placeholder="Base URL, e.g. http://localhost:11434/v1"/>
+            <select id="llm-authmode-select" style="border:1px solid #e5e5e5;border-radius:6px;padding:6px 8px;font-size:13px">
+              <option value="api_key">API key</option>
+              <option value="bearer">Bearer token</option>
+              <option value="none">No authentication (trusted network)</option>
+            </select>
+            <button onclick="saveLlmProviderConfig()" class="btn-start">Save</button>
+          </div>
+          <div id="llm-provider-msg" style="font-size:12px;margin-top:8px"></div>
+        </div>
+      </div>
+      </div>
+
+      <div class="config-tab-content" id="config-tab-content-stir">
+      <div class="config-section">
+        <div class="config-section-title">STIR/SHAKEN</div>
+        <div id="stir-info" style="margin-bottom:12px;padding:12px;background:#fafafa;border:1px solid #e5e5e5;border-radius:8px;font-size:13px">Loading...</div>
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+          <button onclick="stirRegenCert()" style="font-size:12px;padding:6px 12px;border:1px solid #e5e5e5;border-radius:6px;background:#fff;cursor:pointer">↺ Regenerate cert</button>
+          <button onclick="stirShowByoc()" style="font-size:12px;padding:6px 12px;border:1px solid #e5e5e5;border-radius:6px;background:#fff;cursor:pointer">⬆ Upload BYOC cert</button>
+        </div>
+        <div id="stir-byoc-panel" style="display:none;margin-bottom:14px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="field"><label>Certificate PEM</label><textarea id="byoc-cert" rows="5" placeholder="-----BEGIN CERTIFICATE-----" style="font-family:monospace;font-size:11px"></textarea></div>
+            <div class="field"><label>Private Key PEM</label><textarea id="byoc-key" rows="5" placeholder="-----BEGIN EC PRIVATE KEY-----" style="font-family:monospace;font-size:11px"></textarea></div>
+          </div>
+          <button onclick="stirUploadByoc()" class="btn-start" style="margin-top:8px">Upload certificate</button>
+        </div>
+
+        <div class="config-section-title" style="margin-top:16px">PASSporT Generator</div>
+        <div class="field-grid" style="max-width:600px">
+          <div class="field"><label>Orig TN</label><input id="stir-orig-tn" value="5550001"/></div>
+          <div class="field"><label>Dest TN</label><input id="stir-dest-tn" value="9723612348"/></div>
+          <div class="field"><label>Attestation</label>
+            <select id="stir-attest" style="width:100%;border:1px solid #e5e5e5;border-radius:8px;padding:7px 10px;font-size:13px;background:#fafafa;outline:none">
+              <option value="A">A — Full Attestation</option>
+              <option value="B">B — Partial Attestation</option>
+              <option value="C">C — Gateway Attestation</option>
+            </select>
+          </div>
+        </div>
+        <button onclick="stirGenerate()" class="btn-start" style="margin-bottom:14px">✨ Generate PASSporT</button>
+        <div id="stir-result" style="display:none;max-width:700px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div>
+              <div style="font-size:11px;color:#888;font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Identity Header</div>
+              <div style="position:relative">
+                <textarea id="stir-identity" rows="3" readonly style="width:100%;font-family:monospace;font-size:10px;border:1px solid #e5e5e5;border-radius:8px;padding:8px;background:#fafafa;resize:none;box-sizing:border-box"></textarea>
+                <button onclick="copyEl('stir-identity')" style="position:absolute;top:4px;right:4px;padding:2px 8px;font-size:11px">Copy</button>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:#888;font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Decoded PASSporT</div>
+              <pre id="stir-decoded" style="background:#fafafa;border:1px solid #e5e5e5;border-radius:8px;padding:8px;font-size:11px;margin:0;max-height:100px;overflow:auto"></pre>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span id="stir-attest-badge" style="padding:3px 10px;border-radius:10px;font-size:12px;font-weight:500"></span>
+            <span id="stir-tn-display" style="font-size:12px;color:#888"></span>
+          </div>
+        </div>
+
+        <div class="config-section-title" style="margin-top:16px">PASSporT Verifier</div>
+        <div class="field" style="max-width:700px;margin-bottom:10px">
+          <label>Paste Identity header to verify</label>
+          <textarea id="stir-verify-input" rows="3" placeholder="eyJhbGci...;info=<http://...>;alg=ES256;ppt=shaken" style="font-family:monospace;font-size:11px"></textarea>
+        </div>
+        <button onclick="stirVerify()" style="padding:8px 16px;border:1px solid #e5e5e5;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;margin-bottom:10px">🔍 Verify PASSporT</button>
+        <div id="stir-verify-result" style="display:none;max-width:700px;padding:12px;border-radius:8px;font-size:13px"></div>
+      </div>
+      </div>
+
+      <div class="config-tab-content" id="config-tab-content-audio">
+      <div class="config-section">
+        <div class="config-section-title">Audio files</div>
+        <div id="audio-file-list" style="font-size:13px;color:#888">Loading...</div>
+      </div>
+      </div>
+
+      <div class="config-tab-content" id="config-tab-content-interfaces">
+      <div class="config-section">
+        <div class="config-section-title">Network interfaces</div>
+        <div id="interface-list" style="font-size:13px;color:#888">Loading...</div>
+      </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- History Panel -->
+  <div id="history-panel" style="display:none;flex:1;overflow-y:auto;padding:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="font-size:16px;font-weight:500;margin:0">Test History</h2>
+      <button onclick="loadHistory()">↺ Refresh</button>
+    </div>
+    <div id="history-list"><p style="color:#888;font-size:13px">No history yet</p></div>
+  </div>
+
+</div><!-- main -->
+</div><!-- app -->
+
+<script src="/escape.js?v=11"></script>
+<script src="/ladder.js?v=20260715c"></script>
+<script src="/js/01-auth-admin.js?v=11"></script>
+<script src="/js/02-state.js?v=11"></script>
+<script src="/js/03-utils.js?v=11"></script>
+<script src="/js/04-workspaces.js?v=11"></script>
+<script src="/js/05-scripts.js?v=11"></script>
+<script src="/js/06-scripts-2.js?v=11"></script>
+<script src="/js/07-intervals.js?v=11"></script>
+<script src="/js/08-ai-generate.js?v=11"></script>
+<script src="/js/09-run-control.js?v=11"></script>
+<script src="/js/10-run-control-2.js?v=11"></script>
+<script src="/js/11-audio.js?v=11"></script>
+<script src="/js/12-ladder-view.js?v=11"></script>
+<script src="/js/13-sipstats.js?v=11"></script>
+<script src="/js/14-quality.js?v=11"></script>
+<script src="/js/15-scenarios.js?v=11"></script>
+<script src="/js/16-config.js?v=11"></script>
+<script src="/js/17-stir.js?v=11"></script>
+<script src="/js/18-history.js?v=11"></script>
+<script src="/js/19-persistence.js?v=11"></script>
+<script src="/js/20-init.js?v=11"></script>
+</body>
+</html>

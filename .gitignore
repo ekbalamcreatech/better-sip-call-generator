@@ -1,0 +1,23 @@
+# Runtime data: never commit any of this
+run/
+*.pcap
+*.log
+storage/auth_users.json
+storage/saved_workspaces*.json
+storage/sut_registry.json
+storage/history.json
+storage/INITIAL_ADMIN_PASSWORD.txt
+storage/script_templates/*.json
+storage/workspace_templates/*.json
+stir/*.pem
+.env
+*.env
+
+# Python / tooling
+__pycache__/
+*.pyc
+venv/
+.venv/
+.pytest_cache/
+*.tar.gz
+storage/llm_config.json
